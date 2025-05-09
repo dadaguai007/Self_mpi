@@ -1,14 +1,15 @@
 % 复现：MPI 多径串扰的模拟仿真
 clear;clc;close all;
-addpath('D:\PhD\Codebase\')
+% addpath('D:\PhD\Codebase\')
+addpath("D:\BIT_PhD\Base_Code\Codebase_using")
 addpath('Fncs\')
-
+addpatn('Decode\')
 % paramer
 sps = 6;
 Rs  = 40e9;
 Ts  = 1/Rs ;
-Fs  = sps*Rs;
-Ta  = 1/Fs;
+fs  = sps*Rs;
+Ta  = 1/fs;
 
 % mzm
 Vpi = 10;
@@ -17,7 +18,7 @@ Vb = -Vpi/2;
 
 % fiber
 param=struct();
-param.Ltotal = 40; %km
+param.Ltotal = 20; %km
 param.Lspan =10;
 param.hz= 0.1;
 param.alpha=0.2;
@@ -25,15 +26,16 @@ param.D = 16;
 param.gamma = 1.3;
 param.Fc = 193.1e12;
 param.NF = 4.5;
-param.amp='none';
-param.Fs=Fs;
+param.amp='ideal';
+param.Fs=fs;
 
 
 paramPD=struct();
 paramPD.B =Rs;
-paramPD.R =0.95;
+paramPD.R =1;
 paramPD.type = 'ideal';
-paramPD.Fs=Fs;
+paramPD.Fs=fs;
+
 
 
 
@@ -45,32 +47,48 @@ data_2bit=randi([0,1],log2(M),80000);
 symbols = 2.^(0:log2(M)-1)*data_2bit;
 % Mapeia bits para pulsos
 symbTx = pammod(symbols,M,0,'gray');
+% 传输信号归一化
 symbTx = pnorm(symbTx);
+% 参考向量,转换为行向量
+label=symbTx.';
 
-% 参考向量
-label=symbTx;
+
+% 装载DSP-CDR 和解码模块
+SignalRec  =  DspSyncDecoding(...
+    fs,...    % 接收信号的采样率
+    Rs,...    % 接收信号的波特率
+    4,...     % 接收信号的调制格式
+    sps,...   % 上采样率
+    2*sps,...   % 时钟信号的上采样率
+    1e5,...   % 误码计算起始位置
+    label);      % 参考信号
+
+
+
 % Upsampling
 symbolsUp = upsample(symbTx, sps);
 
 % Puls
-hsqrt = rcosdesign(0.01,256,sps,'sqrt');
+hsqrt = rcosdesign(0.1,256,sps,'sqrt');
 % pulse shaping
 sigTx=conv(symbolsUp,hsqrt,'same');
 
-amp_factor=0.25;
+% EA
+amp_factor=0.5;
 Sig_Tx=sigTx*amp_factor;
+
 % mod index
 m=Modulation_index(Sig_Tx,Vpi,'pam');
 fprintf(' the module index =%.3f \n', m);
 
-type='laser';
+
 % Laser
-% Generate LO field with phase noise
 % 输入光功率
+type='laser';
 Pi_dBm = 10;
 Pi = 10^(Pi_dBm/10)*1e-3; %W
 Ai= sqrt(Pi);
-lw      = 1e6;    % laser linewidth
+lw      = 1e3;    % laser linewidth
 phi_pn_lo = phaseNoise(lw, length(sigTx), Ta);
 sigLO = exp(1i * phi_pn_lo);
 if strcmp(type,'laser_phase')
@@ -78,17 +96,11 @@ if strcmp(type,'laser_phase')
 else
     Pin=Ai;
 end
+
 %mzm
 sigTxo = mzm(Pin, Sig_Tx, Vb,Vpi);
 power=signalpower(sigTxo);
 fprintf(' after module signal power: %.2f dBm\n', 10 * log10(power / 1e-3));
-
-% Plota sinal
-t = (0:length(symbTx)-1) * (Ta / 1e-9);
-idX = 1:1024;
-figure;
-plot(t(idX), sigTx(idX),LineWidth=1)
-ylim([-1.5,1.5])
 
 % 1:9 copulter
 aerfa=0.1;
@@ -108,7 +120,21 @@ sigRxo=ssfm(sigTxo_train,param);
 power2=signalpower(sigRxo);
 fprintf(' after ssfm signal power: %.2f dBm\n', 10 * log10(power2 / 1e-3));
 
+%pd
+ipdTrain = pd(sigRxo, paramPD);
+%
+% match and Dc remove
+sigI=ipdTrain.';
+sigI=sigI-mean(sigI);
+% match
+sigMatch=conv(sigI,hsqrt,'same');
+% norm
+sigMatch=pnorm(sigMatch);
 
+% 降采样
+sigRx_E=downsample(sigMatch,sps);
+% 解码
+[decodedData,ber]=SignalRec.PAM_ExecuteDecoding(sigRx_E);
 
 
 % PAM_refection
@@ -123,14 +149,14 @@ param_reflect.gamma = 1.3;
 param_reflect.Fc = 193.1e12;
 param_reflect.NF = 4.5;
 param_reflect.amp='none';
-param_reflect.Fs=Fs;
+param_reflect.Fs=fs;
 
 sigRxo_reflect=ssfm(sigTxo_reflect,param_reflect);
 
 % delay tao
 delay_ps=5.6;
 % sigRxo_delay1= delay_signal(sigRxo_reflect, delay_ps*1e-12);
-sigRxo_delay = iqdelay(sigRxo_reflect, Fs, delay_ps*1e-12);
+sigRxo_delay = iqdelay(sigRxo_reflect, fs, delay_ps*1e-12);
 
 % Attenuator
 Att_dB=2;
@@ -149,24 +175,21 @@ fprintf(' after MPI signal power: %.2f dBm\n', 10 * log10(power5 / 1e-3));
 
 %pd
 ipd = pd(sigTotal, paramPD);
-data_down=downsample(ipd,sps);
 
+% match and Dc Remove
+sigMPI=ipd.';
+sigMPI=sigMPI-mean(sigMPI);
 % match
-sigRx_E=ipd.';
-sigRx_E=sigRx_E-mean(sigRx_E);
-sigRx_E=pnorm(sigRx_E);
-data=sigRx_E;
+sigMatchMPI=conv(sigMPI,hsqrt,'same');
+% norm
+sigMatchMPI=pnorm(sigMatchMPI);
+
 
 % downsample
-sigRx_E=downsample(sigRx_E,sps);
-
-
-figure;hold on;
-plot(t(idX), sigRx_E(idX),'o')
-ylim([-1.5,1.5])
-
+sigRxMPI=downsample(sigMatchMPI,sps);
 % decode
-PAM_Decode;
+[decodedData1,ber1]=SignalRec.PAM_ExecuteDecoding(sigRxMPI);
+
 
 
 
