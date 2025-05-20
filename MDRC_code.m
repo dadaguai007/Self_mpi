@@ -8,12 +8,13 @@ Ts  = 1/Rs ;
 Fs  = SpS*Rs;
 Ta  = 1/Fs;
 
+
+% mzm Vpi
 Vpi = 2;
 Vb = -Vpi/2;
 
 
 Pi_dBm = 10;
-% Pi_dBm=[-10:10];
 Pi = 10^(Pi_dBm/10)*1e-3; %W
 
 
@@ -37,20 +38,7 @@ paramPD.R =0.95;
 paramPD.type = 'ideal';
 paramPD.Fs=Fs;
 
-%linearChannel
-paramCh=struct();
-paramCh.Fs = param.Fs;
-paramCh.L = param.Ltotal;
-paramCh.D = 16;
-paramCh.Fc  = 193.1e12;
-paramCh.alpha = 0.2;
 
-paramEDFA = struct();
-paramEDFA.G = paramCh.alpha*paramCh.L;
-paramEDFA.NF = 4.5  ;
-paramEDFA.Fc = paramCh.Fc;
-paramEDFA.Fs = Fs;
-paramEDFA.type='noise';
 
 %PAM
 M=4;
@@ -100,5 +88,8 @@ sigTx=conv(symbolsUp,hsqrt,'same');
 for i=1:length(sigTx)
     sigTx_reverse(i)=(-1).^i*sigTx(i);
 end
-
+figure;
 mon_ESA(sigTx,Fs);
+
+figure;
+mon_ESA(sigTx_reverse,Fs);

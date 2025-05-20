@@ -3,7 +3,7 @@ clear;clc;close all;
 % addpath('D:\PhD\Codebase\')
 addpath("D:\BIT_PhD\Base_Code\Codebase_using")
 addpath('Fncs\')
-addpatn('Decode\')
+addpath('Decode\')
 % paramer
 sps = 6;
 Rs  = 40e9;
@@ -11,14 +11,16 @@ Ts  = 1/Rs ;
 fs  = sps*Rs;
 Ta  = 1/fs;
 
+% 用来绘图观察
+idX = 1:1024;
 % mzm
-Vpi = 10;
+Vpi = 5;
 Vb = -Vpi/2;
 
 
 % fiber
 param=struct();
-param.Ltotal = 20; %km
+param.Ltotal = 40; %km
 param.Lspan =10;
 param.hz= 0.1;
 param.alpha=0.2;
@@ -26,7 +28,7 @@ param.D = 16;
 param.gamma = 1.3;
 param.Fc = 193.1e12;
 param.NF = 4.5;
-param.amp='ideal';
+param.amp='none';
 param.Fs=fs;
 
 
@@ -136,6 +138,10 @@ sigRx_E=downsample(sigMatch,sps);
 % 解码
 [decodedData,ber]=SignalRec.PAM_ExecuteDecoding(sigRx_E);
 
+% SNR测量
+snr = signalpower(sigRx_E)/(2*signalpower(sigRx_E-symbTx));
+EbN0 = 10*log10(snr/log2(M));
+fprintf('the snr of signal power：%.2f dB\n',10 * log10(snr / 1e-3))
 
 % PAM_refection
 % fiber-reflect
@@ -151,6 +157,7 @@ param_reflect.NF = 4.5;
 param_reflect.amp='none';
 param_reflect.Fs=fs;
 
+% 光反射
 sigRxo_reflect=ssfm(sigTxo_reflect,param_reflect);
 
 % delay tao

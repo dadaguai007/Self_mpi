@@ -2,12 +2,14 @@ clc;clear;close all;
 
 % pam or qam
 type='pam';
-SpS = 16;
+sps = 16;
 Rs  = 60e9;
 Ts  = 1/Rs;
-Fs  = 1/(Ts/SpS);
+Fs  = 1/(Ts/sps);
 Ta  = 1/Fs;
-rolloff = 0.001;
+rolloff = 0.01;
+idX = 1:1024;
+
 
 Pi_dBm=10;
 %MZM
@@ -19,20 +21,19 @@ Pi = 10^(Pi_dBm/10)*1e-3; %W
 param=struct();
 param.Ltotal = 40; %km
 param.Lspan =10;
-param.hz= 0.5;
+param.hz= 0.1;
 param.alpha=0.2;
 param.D = 16;
 param.gamma = 1.3;
 param.Fc = 193.1e12;
 param.NF = 4.5;
-param.amp='edfa';
-% param.amp='none';
+param.amp='ideal';
 param.Fs=Fs;
 
 %PD
 paramPD=struct();
 paramPD.B =Rs;
-paramPD.R =0.95;
+paramPD.R =1;
 paramPD.type = 'ideal';
 paramPD.Fs=Fs;
 
@@ -59,16 +60,13 @@ if strcmp(type,'pam')
     symbTx = pnorm(symbTx);
 elseif strcmp(type,'qam')
         symbTx=qammod(c_bits,M,'InputType','bit','UnitAveragePower',1) ;
-%     symbols = 2.^(0:log2(M)-1)*c_bits;
-%     symbTx=pskmod(symbols,M,pi/4,'gray') ;
-%     symbTx = pnorm(symbTx);
 end
 
-symbolsUp = upsample(symbTx, SpS);
+symbolsUp = upsample(symbTx, sps);
 
 reverse='False';
-pulseDoub = Duob(SpS, 2048, reverse, rolloff);
-pulse = rcosdesign(rolloff,2048,SpS,'sqrt');
+pulseDoub = Duob(sps, 2048, reverse, rolloff);
+pulse = rcosdesign(rolloff,2048,sps,'sqrt');
 % pulse = pulseShape('rrc', SpS, 2048, rolloff);
 % pulse = pulse/max(abs(pulse));
 % sigTx = firFilter(pulseDoub, symbolsUp);
@@ -76,39 +74,40 @@ sigTx=conv(pulseDoub,symbolsUp,'same');
 t = (0:length(symbTx)-1) * (Ta / 1e-9);
 
 %星座图
-scatterplot(downsample(sigTx,SpS))
+scatterplot(downsample(sigTx,sps))
 %眼图
-eyediagram(sigTx,4*SpS)
+eyediagram(sigTx,4*sps)
 
 %mzm
 Ai     = sqrt(Pi);
 % 放大倍数
-Amp=1;
+Amp=0.5;
 sigTxo = mzm(Ai, Amp*sigTx, Vb,Vpi);
 
 
 %ssfo
 sigRxo=ssfm(sigTxo,param);
+
+
 %pd
 ipd = pd(sigRxo, paramPD);
-%match
-Ipd=conv(pulse,ipd,'same');
+%match and Dc remove
+sigI=ipd.';
+sigI=sigI-mean(sigI);
+Ipd=conv(pulseDoub,sigI,'same');
+% norm
 Ipd = pnorm(Ipd);
-idX = 1:1024;
+
+% 降采样
+sigRx_E=downsample(Ipd,sps);
+
+
 figure
 plot(t(idX),Ipd(idX),LineWidth=1)
-eyediagram(Ipd,2*SpS)
+eyediagram(Ipd,2*sps)
 title('pd-after-fiber')
-plot_spectrum(Ipd,Fs);
 
-% 功率选择性衰落
-[powershift,fshift,p1,fnew,p2,f] = FFT(Ipd,Fs);
+% 频谱
 figure;
-plot(fnew,20*log(p1))
-% 频谱表示
-F=abs(fftshift(fft(Ipd)));
-figure;
-plot(f,20*log10(F))
-
-
+mon_ESA(Ipd,Fs);
 
